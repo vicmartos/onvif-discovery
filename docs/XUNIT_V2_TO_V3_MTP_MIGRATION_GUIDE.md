@@ -1,15 +1,15 @@
-# Migration Guide: XUnit v2 with VSTest to XUnit v3 with Microsoft Testing Platform (MTP) v2
+# Migration Guide: xUnit v2 with VSTest to xUnit v3 with Microsoft Testing Platform (MTP) v2
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Why Migrate?](#why-migrate)
-- [Advantages of XUnit v3](#advantages-of-xunit-v3)
-- [Advantages of Microsoft Testing Platform](#advantages-of-microsoft-testing-platform)
+- [Target Configuration](#target-configuration)
 - [Migration Steps](#migration-steps)
   - [1. Project File Changes](#1-project-file-changes)
   - [2. Code Changes](#2-code-changes)
   - [3. CI/CD Pipeline Changes](#3-cicd-pipeline-changes)
+- [Package Release 4.0.0 Considerations](#package-release-400-considerations)
 - [Command-Line Reference](#command-line-reference)
 - [Troubleshooting](#troubleshooting)
 
@@ -17,161 +17,25 @@
 
 ## Overview
 
-This guide provides comprehensive instructions for migrating from XUnit v2 with VSTest to XUnit v3 with Microsoft Testing Platform (MTP) v2. The migration involves three main areas:
+This guide migrates a test project from **xUnit v2** with VSTest to **xUnit v3** with Microsoft Testing Platform (MTP) v2. The recommended target package is:
 
-1. **Package and project configuration updates**
-2. **Code adaptations for breaking changes**
-3. **CI/CD pipeline modifications** (specifically Azure DevOps with SonarQube/SonarCloud integration)
+```xml
+<PackageReference Include="xunit.v3" Version="4.0.0" />
+```
 
----
+`4.0.0` is a major package release of **xUnit v3**; it is not a new xUnit v4 framework generation. The migration still changes the test framework from xUnit v2 to xUnit v3.
+
+The migration includes package and project configuration updates, any required xUnit v3 code adaptations, and MTP-compatible CI/CD changes.
 
 ## Why Migrate?
 
-### End of VSTest Era
+Microsoft Testing Platform (MTP) is the modern .NET test platform. It supports `dotnet test`, Test Explorer, standalone test executables, coverage extensions, and reporting extensions.
 
-Microsoft Testing Platform (MTP) represents the future of .NET testing. VSTest, the underlying driver for `dotnet test` since Visual Studio 2010, is being gradually deprecated in favor of MTP. Microsoft has made it clear that MTP will be the standard going forward.
+xUnit v3 provides standalone test projects, modern async support, improved test configuration, and native MTP support. Targeting package release 4.0.0 also makes MTP v2 the default implementation.
 
-### XUnit v3 as the Standard
+## Target Configuration
 
-XUnit v2 is in maintenance mode while v3 receives active development and new features. Migrating to v3 ensures access to:
-
-- Latest bug fixes and performance improvements
-- New assertion methods and test features
-- Better alignment with modern .NET capabilities
-- Native integration with emerging tools and platforms
-
----
-
-## Advantages of XUnit v3
-
-### Standalone Executables
-
-Unlike v2 where test projects were libraries requiring external runners, v3 projects are standalone executables:
-
-```bash
-# Build and run directly
-dotnet build
-./bin/Debug/net8.0/YourTests.exe
-
-# Or build and run in one step
-dotnet run
-```
-
-This eliminates the Application Domain complexity and dependency resolution issues that plagued v2.
-
-### Improved Async Support
-
-XUnit v3 embraces modern async patterns:
-
-- **ValueTask support**: Better performance for frequently synchronous operations
-- **CancellationToken integration**: Tests can properly respect cancellation
-- **IAsyncLifetime improvements**: Now inherits from `IAsyncDisposable` following .NET best practices
-- **`async void` tests rejected**: Caught at runtime to prevent common async mistakes
-
-### Performance Enhancements
-
-- Faster test discovery and execution
-- Reduced memory footprint
-- Better parallelization control
-- Streamlined startup process
-
----
-
-## Advantages of Microsoft Testing Platform
-
-### Modern Architecture
-
-MTP is designed from the ground up as a modern testing engine:
-
-- **Unified execution model**: Same runner for command line, IDE, and CI/CD
-- **Process isolation**: Better reliability and resource cleanup
-- **Streamlined communication**: Reduced overhead between runner and tests
-
-### Superior Performance
-
-- Lower startup overhead compared to VSTest
-- More efficient test discovery
-- Better memory management
-- Faster test execution, especially for large test suites
-
-### Extensibility System
-
-MTP introduces a first-class extension system:
-
-- **Code coverage**: Native support via `Microsoft.Testing.Extensions.CodeCoverage`
-- **Reporting**: Multiple output formats (TRX, JUnit, NUnit, CTRF, HTML)
-- **Custom extensions**: Write your own testing platform extensions
-
-### Consistent Experience
-
-- Same command-line interface across all test frameworks (xUnit, MSTest, TUnit)
-- Unified configuration via `testconfig.json`
-- Consistent output formatting
-- Better integration with modern IDEs
-
-### No Runner Dependencies
-
-Test projects can run independently without:
-- `xunit.runner.visualstudio` (though still recommended for backward compatibility)
-- `Microsoft.NET.Test.Sdk` (for pure MTP scenarios)
-- External console runners
-
----
-
-## Migration Steps
-
-### 1. Project File Changes
-
-#### Package Reference Updates
-
-Update your `.csproj` file with the following changes:
-
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <!-- Convert from Library to Exe -->
-    <OutputType>Exe</OutputType>
-    <IsPackable>false</IsPackable>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <!-- Update from xunit to xunit.v3 -->
-    <!-- Use xunit.v3.mtp-v2 for explicit MTP v2 support -->
-    <PackageReference Include="xunit.v3.mtp-v2" Version="3.*" />
-
-    <!-- Update runner to v3.x -->
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.*">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-
-    <!-- Remove coverlet.msbuild -->
-    <!-- Add Microsoft code coverage extension -->
-    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.*" />
-
-    <!-- Other packages remain unchanged -->
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.*" />
-  </ItemGroup>
-
-</Project>
-```
-
-#### Package Mappings
-
-| v2 Package | v3 Package | Action |
-|------------|------------|--------|
-| `xunit` | `xunit.v3` or `xunit.v3.mtp-v2` | Update reference |
-| `xunit.abstractions` | - | Remove (no longer needed) |
-| `xunit.runner.visualstudio` | `xunit.runner.visualstudio` | Update to v3.x |
-| `coverlet.msbuild` | `Microsoft.Testing.Extensions.CodeCoverage` | Replace |
-
-#### Global Configuration (global.json)
-
-Create a `global.json` file in the repository root to enable MTP:
+For a .NET 10 MTP-only test project, use an executable test project and select MTP in `global.json`:
 
 ```json
 {
@@ -181,194 +45,65 @@ Create a `global.json` file in the repository root to enable MTP:
 }
 ```
 
-This is the recommended approach for .NET SDK 10+ and works automatically with xUnit v3 - no additional MSBuild properties are required when using this method.
+The relevant package names are:
 
-#### Alternative: MSBuild Properties (SDK 8/9)
+| Purpose | xUnit v2 | xUnit v3 target |
+|---|---|---|
+| Test framework | `xunit` | `xunit.v3` 4.0.0 |
+| Explicit MTP v2 selection | N/A | `xunit.v3.mtp-v2` 4.0.0 (optional) |
+| VSTest adapter | `xunit.runner.visualstudio` | Only retain when VSTest fallback is required |
+| VSTest SDK support | `Microsoft.NET.Test.Sdk` | Only retain when VSTest fallback is required |
+| Coverage | `coverlet.msbuild` | `Microsoft.Testing.Extensions.CodeCoverage` |
 
-For .NET SDK versions 8 or 9, you must use MSBuild properties instead of `global.json`:
+In `xunit.v3` 3.x, MTP v1 was the default, so `xunit.v3.mtp-v2` was necessary to choose MTP v2 explicitly. Starting with package release 4.0.0, MTP v1 support was removed and `xunit.v3` defaults to MTP v2. `xunit.v3.mtp-v2` 4.0.0 remains valid when the explicit package name is preferred.
+
+MTP support is native to xUnit v3. Remove `xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk` only after confirming every supported developer environment and CI runner supports MTP. Keep both packages if older VSTest-only tooling must continue to work.
+
+## Migration Steps
+
+### 1. Project File Changes
+
+Update the test project to be an executable and reference xUnit v3 4.0.0:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.*" />
+  </ItemGroup>
+</Project>
+```
+
+For SDK 10 and later, the `global.json` setting shown above enables MTP for `dotnet test`. For SDK 8 or 9, set `TestingPlatformDotnetTestSupport` to `true`; `UseMicrosoftTestingPlatformRunner` is optional when the MTP command-line experience is wanted.
 
 ```xml
 <PropertyGroup>
-  <!-- Enable Microsoft Testing Platform for dotnet test -->
   <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
-  <!-- Optional: Use MTP command-line experience instead of xUnit native -->
   <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
 </PropertyGroup>
 ```
 
-| SDK Version | Configuration Method | Required Properties |
-|-------------|---------------------|---------------------|
-| .NET 10+ | `global.json` | None - MTP auto-detected |
-| .NET 8/9 | MSBuild properties | `TestingPlatformDotnetTestSupport` (required), `UseMicrosoftTestingPlatformRunner` (optional) |
-
 ### 2. Code Changes
 
-Code-level changes required for XUnit v3 are documented in the official xUnit.net documentation. Refer to these resources for comprehensive guidance on adapting your test code:
+Apply the xUnit v2-to-v3 changes described in the official migration guide. Common changes include removing `Xunit.Abstractions`, updating `IAsyncLifetime`, using `TestContext.Current` for cancellation, modernizing theory data, and removing `async void` tests.
 
-- **[Migrating from xUnit.net v2 to v3](https://xunit.net/docs/getting-started/v3/migration)** - Complete migration guide covering all breaking changes, including:
-  - Namespace changes (removal of `Xunit.Abstractions`)
-  - `IAsyncLifetime` changes (now inherits from `IAsyncDisposable`)
-  - CancellationToken integration via `TestContext.Current`
-  - Theory data changes (`IEnumerable<object[]>` to `IEnumerable<ITheoryDataRow>`)
-  - Removal of `async void` test support
-  - Package and namespace mappings
-
-- **[What's New in xUnit.net v3](https://xunit.net/docs/getting-started/v3/whats-new)** - New features and quality-of-life improvements, including:
-  - New assertions and overloads
-  - Enhanced test configuration options
-  - Performance improvements
-  - New extensibility points
+Before updating to package release 4.0.0, review code that implements xUnit extensibility APIs, custom runners, discoverers, orderers, result writers, or assertion extensions. Ordinary `[Fact]`, `[Theory]`, `TheoryDataRow`, and `TestContext.Current.CancellationToken` usage does not require a source change for this package upgrade.
 
 ### 3. CI/CD Pipeline Changes
 
-#### Azure DevOps with SonarCloud/SonarQube
-
-**Complete Azure Pipelines Configuration:**
+Use MTP coverage and xUnit report options in CI:
 
 ```yaml
-trigger:
-  branches:
-    include:
-      - main
-
-pr:
-  branches:
-    include:
-      - main
-
-pool:
-  vmImage: ubuntu-latest
-
-variables:
-  buildConfiguration: "Release"
-
-steps:
-  # Step 1: Prepare SonarCloud Analysis
-  # Update from v1 to v4 for modern scanner support
-  - task: SonarCloudPrepare@4
-    inputs:
-      SonarCloud: "sonarcloud"
-      organization: "your-organization"
-      # Change from MSBuild to dotnet scanner mode
-      scannerMode: "dotnet"
-      projectKey: "your-project-key"
-      projectVersion:
-      extraProperties: |
-        sonar.exclusions=**/bin/**/*,**/obj/**/*
-        sonar.language=cs
-        # Update coverage path to use VS Coverage XML format
-        sonar.cs.vscoveragexml.reportsPaths=$(Agent.TempDirectory)/coverage.xml
-
-  # Step 2: Install .NET SDK
-  - task: UseDotNet@2
-    displayName: 'Install .NET Core SDK'
-    inputs:
-      version: '8.x'
-
-  # Step 3: Restore Dependencies
-  - task: DotNetCoreCLI@2
-    displayName: Restore
-    inputs:
-      command: restore
-      projects: '**/*.csproj'
-
-  # Step 4: Build Project
-  - task: DotNetCoreCLI@2
-    displayName: Build
-    inputs:
-      command: build
-      projects: '**/*.csproj'
-      arguments: '--configuration $(buildConfiguration) --no-restore'
-
-  # Step 5: Run Tests with Coverage
-  # Change from standard test command to custom with MTP flags
-  - task: DotNetCoreCLI@2
-    displayName: Test
-    inputs:
-      command: custom
-      custom: test
-      arguments: >-
-        --configuration $(buildConfiguration)
-        --results-directory $(Agent.TempDirectory)
-        --coverage
-        --coverage-output-format xml
-        --coverage-output coverage.xml
-        --report-xunit-trx
-        --report-xunit-trx-filename test-results.trx
-
-  # Step 6: Publish Test Results
-  # New step to publish TRX test results
-  - task: PublishTestResults@2
-    inputs:
-      testResultsFormat: 'VSTest'
-      testResultsFiles: '$(Agent.TempDirectory)/*.trx'
-      mergeTestResults: true
-
-  # Step 7: Run SonarCloud Analysis
-  # Update from v1 to v4
-  - task: SonarCloudAnalyze@4
-
-  # Step 8: Publish SonarCloud Quality Gate
-  # Update from v1 to v4
-  - task: SonarCloudPublish@4
-    inputs:
-      pollingTimeoutSec: "300"
-```
-
-#### Key Pipeline Changes Explained
-
-**1. SonarCloud Task Version Updates**
-
-Update all SonarCloud tasks from v1 to v4:
-- `SonarCloudPrepare@1` → `SonarCloudPrepare@4`
-- `SonarCloudAnalyze@1` → `SonarCloudAnalyze@4`
-- `SonarCloudPublish@1` → `SonarCloudPublish@4`
-
-**2. Scanner Mode Change**
-
-Change from MSBuild to dotnet scanner:
-```yaml
-# Old
-scannerMode: "MSBuild"
-
-# New
-scannerMode: "dotnet"
-```
-
-**3. Coverage Format Migration**
-
-Replace Coverlet/OpenCover with MTP coverage:
-
-```yaml
-# Old (Coverlet with OpenCover)
-arguments: "--configuration $(buildConfiguration) /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=../cov"
-extraProperties: |
-  sonar.cs.opencover.reportsPaths=$(Build.SourcesDirectory)/cov.opencover.xml
-
-# New (MTP with XML coverage)
-arguments: >-
-  --configuration $(buildConfiguration)
-  --results-directory $(Agent.TempDirectory)
-  --coverage
-  --coverage-output-format xml
-  --coverage-output coverage.xml
-extraProperties: |
-  sonar.cs.vscoveragexml.reportsPaths=$(Agent.TempDirectory)/coverage.xml
-```
-
-**4. Test Command Changes**
-
-Change from standard test to custom command:
-
-```yaml
-# Old
 - task: DotNetCoreCLI@2
-  inputs:
-    command: test
-    arguments: "--configuration $(buildConfiguration)"
-
-# New
-- task: DotNetCoreCLI@2
+  displayName: Test
   inputs:
     command: custom
     custom: test
@@ -380,136 +115,80 @@ Change from standard test to custom command:
       --coverage-output coverage.xml
       --report-xunit-trx
       --report-xunit-trx-filename test-results.trx
-```
 
-**5. TRX Report Publishing**
-
-Add explicit test result publishing:
-
-```yaml
 - task: PublishTestResults@2
   inputs:
-    testResultsFormat: 'VSTest'
+    testResultsFormat: VSTest
     testResultsFiles: '$(Agent.TempDirectory)/*.trx'
     mergeTestResults: true
 ```
 
----
+For SonarCloud/SonarQube, point `sonar.cs.vscoveragexml.reportsPaths` at the generated XML coverage file.
+
+## Package Release 4.0.0 Considerations
+
+Package release 4.0.0 updates the MTP v2 packages to MTP 2.3.3 and removes MTP v1 support. It also adds Native AOT support, full test parallelization, class and method orderers, fixture lifecycle notifications, new filtering options, and assertion improvements. These capabilities are optional; do not enable Native AOT or full test parallelization as part of a dependency-only migration.
+
+Most breaking changes affect extensibility code. Review the following only if the test suite uses the associated APIs:
+
+- Replace obsolete `CollectionBehavior` parallelization properties with `ParallelizationAttribute` properties (`Mode`, `MaxThreads`, and `Algorithm`).
+- Update custom runner, discoverer, orderer, result-writer, and assertion-extension implementations for their revised or obsolete xUnit APIs.
+- Replace the removed XSL-T `TransformFactory` path with registered console or MTP result writers when custom reports are used.
+- Update custom theory discoverers and test-runner constructors for their new parallelization and scheduling parameters.
+
+For a conventional test suite without custom xUnit extensibility, package release 4.0.0 should require no test-source migration beyond the existing xUnit v2-to-v3 changes.
 
 ## Command-Line Reference
 
-### Running Tests Locally
-
 ```bash
-# Build and run with MTP runner
-dotnet run --project YourTests
-
-# Run with coverage
-dotnet run --project YourTests -- --coverage --coverage-output-format xml
-
-# Run specific test class
-dotnet run --project YourTests -- --filter-class YourNamespace.YourTestClass
-
-# Run with TRX report output
-dotnet run --project YourTests -- --report-xunit-trx --report-xunit-trx-filename results.trx
-```
-
-### Using dotnet test
-
-```bash
-# Standard run (requires global.json for SDK 10+ or TestingPlatformDotnetTestSupport for SDK 8/9)
+# Run all tests through MTP
 dotnet test
 
-# With coverage
+# Run with coverage
 dotnet test -- --coverage --coverage-output-format xml
 
-# With specific filter
+# Run a specific class
 dotnet test -- --filter-class YourNamespace.YourTestClass
+
+# Run with a TRX report
+dotnet test -- --report-xunit-trx --report-xunit-trx-filename results.trx
 ```
 
-### Common MTP Flags
+Reports are written to the MTP results directory. With package release 4.0.0, xUnit-owned report switches use an `xunit` prefix to avoid collisions:
 
-| Flag | Description |
-|------|-------------|
-| `--coverage` | Enable code coverage collection |
-| `--coverage-output-format <format>` | Format: `xml`, `cobertura`, or `coverage` |
-| `--coverage-output <filename>` | Coverage output filename |
-| `--report-xunit-trx` | Generate TRX report |
-| `--report-xunit-trx-filename <file>` | TRX report filename |
-| `--report-junit` | Generate JUnit XML report |
-| `--report-xunit-html` | Generate HTML report |
-| `--filter-class <name>` | Run tests in specific class |
-| `--filter-method <name>` | Run specific test method |
-| `--fail-skips on` | Treat skipped tests as failed |
-| `--parallel <option>` | Control parallelization |
+| Before 4.0.0 | In 4.0.0 |
+|---|---|
+| `--report-ctrf` | `--report-xunit-ctrf` |
+| `--report-ctrf-filename` | `--report-xunit-ctrf-filename` |
+| `--report-junit` | `--report-xunit-junit` |
+| `--report-junit-filename` | `--report-xunit-junit-filename` |
+| `--report-nunit` | `--report-xunit-nunit` |
+| `--report-nunit-filename` | `--report-xunit-nunit-filename` |
+| `--report-xunit` | `--report-xunit-xml` |
+| `--report-xunit-filename` | `--report-xunit-xml-filename` |
 
----
+`--report-xunit-html` and `--report-xunit-trx` (and their filename switches) are unchanged.
 
 ## Troubleshooting
 
-### Issue: Tests Not Running with MTP
+### `dotnet test` still uses VSTest
 
-**Symptom**: `dotnet test` still uses VSTest
+For .NET 10 and later, ensure `global.json` selects `Microsoft.Testing.Platform`. For SDK 8 or 9, set `TestingPlatformDotnetTestSupport` to `true` in the project.
 
-**Solution**: Check your configuration based on SDK version:
+If an older IDE or tool requires VSTest, restore the `xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk` package references instead of disabling MTP.
 
-**For .NET SDK 10+:** Ensure `global.json` exists in repository root:
-```json
-{
-  "test": {
-    "runner": "Microsoft.Testing.Platform"
-  }
-}
-```
+### Coverage report is not generated
 
-**For .NET SDK 8/9:** Add MSBuild property to `.csproj`:
-```xml
-<PropertyGroup>
-  <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
-</PropertyGroup>
-```
+Verify that `Microsoft.Testing.Extensions.CodeCoverage` is referenced, `--coverage` is passed, and `--results-directory` is set when CI expects a specific output location.
 
-### Issue: Coverage Report Not Generated
+### MTP v1 versus MTP v2 confusion
 
-**Symptom**: No coverage file in output
-
-**Solution**: Verify the package reference:
-```xml
-<PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.*" />
-```
-
-Ensure the `--coverage` flag is passed and `--results-directory` is set.
-
-### Issue: SonarCloud Not Picking Up Coverage
-
-**Symptom**: SonarCloud shows 0% coverage
-
-**Solution**:
-1. Verify the coverage file exists in `$(Agent.TempDirectory)`
-2. Check SonarCloud property matches the format: `sonar.cs.vscoveragexml.reportsPaths`
-3. Check flag `--coverage-output-format` is set to `xml`
-4. Ensure the coverage file is generated before SonarCloudAnalyze runs
-
-**Note**: Sonarqube does not fully support cobertura format
-
-
-### Issue: MTP v2 vs v1 Confusion
-
-**Symptom**: Incompatibility with certain tools or features
-
-**Solution**: Be explicit about MTP v2:
-```xml
-<!-- Instead of xunit.v3 -->
-<PackageReference Include="xunit.v3.mtp-v2" Version="3.*" />
-```
-
-**Note**: xunit.v3 by default uses MTP v1
-
----
+Use `xunit.v3` 4.0.0 for the default MTP v2 configuration. Use `xunit.v3.mtp-v2` 4.0.0 only when the MTP v2 selection must be explicit. Do not attempt to use MTP v1 with package release 4.0.0; it is unsupported.
 
 ## References
 
-- [XUnit v3 Migration Guide](https://xunit.net/docs/getting-started/v3/migration)
-- [Microsoft Testing Platform Documentation](https://xunit.net/docs/getting-started/v3/microsoft-testing-platform)
+- [Migrating Unit Tests from xUnit.net v2 to v3](https://xunit.net/docs/getting-started/v3/migration)
+- [Microsoft Testing Platform with xUnit.net v3](https://xunit.net/docs/getting-started/v3/microsoft-testing-platform)
+- [xUnit.net v3 package release 4.0.0](https://xunit.net/releases/v3/4.0.0)
 - [Code Coverage with MTP](https://xunit.net/docs/getting-started/v3/code-coverage-with-mtp)
-- [Microsoft Testing Platform Extensions](https://learn.microsoft.com/dotnet/core/testing/unit-testing-platform-extensions)
+- [Microsoft Testing Platform extensions](https://learn.microsoft.com/dotnet/core/testing/unit-testing-platform-extensions)
