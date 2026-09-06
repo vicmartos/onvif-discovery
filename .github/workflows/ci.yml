@@ -1,4 +1,4 @@
-name: .NET Core
+name: CI
 
 on:
   pull_request:
@@ -7,17 +7,69 @@ on:
       - develop
       - master
 
+permissions:
+  contents: read
+
 jobs:
-  build:
+  build-test-pack:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
-      - name: Setup .NET Core
-        uses: actions/setup-dotnet@v1
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      - name: Build with dotnet
-        run: dotnet build --configuration Release
+
+      - name: Restore
+        run: dotnet restore OnvifDiscovery.sln --disable-build-servers -m:1
+
+      - name: Build
+        run: >-
+          dotnet build OnvifDiscovery.sln
+          --configuration Release
+          --no-restore
+          --disable-build-servers
+          -m:1
+          -p:Version=0.0.0-ci
+
       - name: Run tests
-        run: dotnet test
+        run: dotnet OnvifDiscovery.Tests/bin/Release/net10.0/OnvifDiscovery.Tests.dll -noColor -noLogo
+
+      - name: Pack probe package
+        run: >-
+          dotnet pack OnvifDiscovery/OnvifDiscovery.csproj
+          --configuration Release
+          --output artifacts
+          --no-build
+          --no-restore
+          --disable-build-servers
+          -m:1
+          -p:Version=0.0.0-ci
+
+      - name: Verify package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          nupkg="artifacts/OnvifDiscovery.0.0.0-ci.nupkg"
+          test -f "$nupkg"
+
+          package_files=$(unzip -Z1 "$nupkg")
+          grep -Fxq "README.md" <<< "$package_files"
+          grep -Fxq "lib/net8.0/OnvifDiscovery.dll" <<< "$package_files"
+          grep -Fxq "lib/net8.0/OnvifDiscovery.xml" <<< "$package_files"
+          grep -Fxq "lib/net10.0/OnvifDiscovery.dll" <<< "$package_files"
+          grep -Fxq "lib/net10.0/OnvifDiscovery.xml" <<< "$package_files"
+          unzip -p "$nupkg" README.md | cmp -s README.md -
+
+          nuspec=$(unzip -p "$nupkg" '*.nuspec')
+          grep -Fq '<id>OnvifDiscovery</id>' <<< "$nuspec"
+          grep -Fq '<version>0.0.0-ci</version>' <<< "$nuspec"
+          grep -Fq '<license type="expression">MIT</license>' <<< "$nuspec"
+          grep -Fq '<readme>README.md</readme>' <<< "$nuspec"
+          grep -Fq '<repository type="git" url="https://github.com/vicmaeg/onvif-discovery"' <<< "$nuspec"

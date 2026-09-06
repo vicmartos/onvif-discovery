@@ -1,0 +1,250 @@
+name: Release NuGet package
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Calculate the next version without creating a tag or publishing
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  calculate:
+    name: Calculate version
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      commit: ${{ steps.release.outputs.commit }}
+
+    steps:
+      - name: Require workflow from master
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "Run this workflow from the master branch, not $GITHUB_REF" >&2
+            exit 1
+          fi
+
+      - name: Checkout latest master
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install SemVer tool
+        run: dotnet tool install --global ReleaseTools.SemVer --version 1.0.0
+
+      - name: Calculate release version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          result=$(semver --output json)
+          version=$(jq -er '.version' <<< "$result")
+          full_version=$(jq -er '.fullVersion' <<< "$result")
+          base_tag=$(jq -r '.baseTag // "none"' <<< "$result")
+          commit_count=$(jq -er '.commitCount' <<< "$result")
+          increment_reason=$(jq -er '.incrementReason' <<< "$result")
+
+          if [[ "$version" != "$full_version" ]]; then
+            echo "Expected a stable version, got: $full_version" >&2
+            exit 1
+          fi
+
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Calculated version is not a stable three-part SemVer: $version" >&2
+            exit 1
+          fi
+
+          commit=$(git rev-parse HEAD)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Calculated release"
+            echo
+            echo "- Version: \`$version\`"
+            echo "- Base tag: \`$base_tag\`"
+            echo "- Increment reason: $increment_reason"
+            echo "- Commits considered: \`$commit_count\`"
+            echo "- Master commit: \`$commit\`"
+            if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+              echo
+              echo "> Dry run: no package was built, no tag was created, and nothing was published."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Build, tag, and publish
+    if: ${{ inputs.dry_run == false }}
+    needs: calculate
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      id-token: write
+
+    concurrency:
+      group: release-onvifdiscovery
+      cancel-in-progress: false
+
+    env:
+      VERSION: ${{ needs.calculate.outputs.version }}
+      TAG: ${{ needs.calculate.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.calculate.outputs.commit }}
+      NUPKG: artifacts/OnvifDiscovery.${{ needs.calculate.outputs.version }}.nupkg
+
+    steps:
+      - name: Checkout calculated master commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.calculate.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Validate release target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch origin +refs/heads/master:refs/remotes/origin/master --tags --force
+          current_master=$(git rev-parse refs/remotes/origin/master)
+          if [[ "$current_master" != "$RELEASE_COMMIT" ]]; then
+            echo "master advanced from $RELEASE_COMMIT to $current_master; run the workflow again" >&2
+            exit 1
+          fi
+
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            tagged_commit=$(git rev-list -n 1 "$TAG")
+            if [[ "$tagged_commit" != "$RELEASE_COMMIT" ]]; then
+              echo "Tag $TAG already points to $tagged_commit; there is no new calculated version to release" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore OnvifDiscovery.sln --disable-build-servers -m:1
+
+      - name: Build
+        run: >-
+          dotnet build OnvifDiscovery.sln
+          --configuration Release
+          --no-restore
+          --disable-build-servers
+          -m:1
+          -p:Version="$VERSION"
+
+      - name: Run tests
+        run: dotnet OnvifDiscovery.Tests/bin/Release/net10.0/OnvifDiscovery.Tests.dll -noColor -noLogo
+
+      - name: Pack
+        run: >-
+          dotnet pack OnvifDiscovery/OnvifDiscovery.csproj
+          --configuration Release
+          --output artifacts
+          --no-build
+          --no-restore
+          --disable-build-servers
+          -m:1
+          -p:Version="$VERSION"
+
+      - name: Verify package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f "$NUPKG"
+
+          package_files=$(unzip -Z1 "$NUPKG")
+          grep -Fxq "README.md" <<< "$package_files"
+          grep -Fxq "lib/net8.0/OnvifDiscovery.dll" <<< "$package_files"
+          grep -Fxq "lib/net8.0/OnvifDiscovery.xml" <<< "$package_files"
+          grep -Fxq "lib/net10.0/OnvifDiscovery.dll" <<< "$package_files"
+          grep -Fxq "lib/net10.0/OnvifDiscovery.xml" <<< "$package_files"
+          unzip -p "$NUPKG" README.md | cmp -s README.md -
+
+          nuspec=$(unzip -p "$NUPKG" '*.nuspec')
+          grep -Fq '<id>OnvifDiscovery</id>' <<< "$nuspec"
+          grep -Fq "<version>$VERSION</version>" <<< "$nuspec"
+          grep -Fq '<license type="expression">MIT</license>' <<< "$nuspec"
+          grep -Fq '<readme>README.md</readme>' <<< "$nuspec"
+          grep -Fq '<repository type="git" url="https://github.com/vicmaeg/onvif-discovery"' <<< "$nuspec"
+
+      - name: Log in to NuGet with trusted publishing
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Verify master has not advanced
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch origin +refs/heads/master:refs/remotes/origin/master --tags --force
+          current_master=$(git rev-parse refs/remotes/origin/master)
+          if [[ "$current_master" != "$RELEASE_COMMIT" ]]; then
+            echo "master advanced from $RELEASE_COMMIT to $current_master; run the workflow again" >&2
+            exit 1
+          fi
+
+      - name: Create and push tag
+        id: create-tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            tagged_commit=$(git rev-list -n 1 "$TAG")
+            if [[ "$tagged_commit" != "$RELEASE_COMMIT" ]]; then
+              echo "Tag $TAG already points to $tagged_commit instead of $RELEASE_COMMIT" >&2
+              exit 1
+            fi
+
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already points to the release commit; continuing as a retry."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release $TAG" "$RELEASE_COMMIT"
+            git push origin "refs/tags/$TAG"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish package to NuGet
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: >-
+          dotnet nuget push "$NUPKG"
+          --api-key "$NUGET_API_KEY"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Write release summary
+        shell: bash
+        run: |
+          {
+            echo "## NuGet release published"
+            echo
+            echo "- Package: \`OnvifDiscovery $VERSION\`"
+            echo "- Tag: \`$TAG\`"
+            echo "- Commit: \`$RELEASE_COMMIT\`"
+            echo "- Tag created in this run: \`${{ steps.create-tag.outputs.created }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

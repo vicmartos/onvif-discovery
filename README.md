@@ -1,53 +1,101 @@
 # Onvif Discovery
 
-[![NuGet version (OnvifDiscovery)](https://img.shields.io/nuget/v/OnvifDiscovery.svg?style=flat-square)](https://www.nuget.org/packages/OnvifDiscovery/) [![Build Status](https://dev.azure.com/vmaeg/onvif-discovery/_apis/build/status/vicmaeg.onvif-discovery?branchName=master)](https://dev.azure.com/vmaeg/onvif-discovery/_build/latest?definitionId=3&branchName=master)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=vicmaeg_onvif-discovery&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=vicmaeg_onvif-discovery)
+[![NuGet](https://img.shields.io/nuget/v/OnvifDiscovery.svg?style=flat-square)](https://www.nuget.org/packages/OnvifDiscovery/)
+[![GitHub CI](https://github.com/vicmaeg/onvif-discovery/actions/workflows/ci.yml/badge.svg)](https://github.com/vicmaeg/onvif-discovery/actions/workflows/ci.yml)
+[![Azure Pipelines](https://dev.azure.com/vmaeg/onvif-discovery/_apis/build/status/vicmaeg.onvif-discovery?branchName=master)](https://dev.azure.com/vmaeg/onvif-discovery/_build/latest?definitionId=3&branchName=master)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=vicmaeg_onvif-discovery&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=vicmaeg_onvif-discovery)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=vicmaeg_onvif-discovery&metric=coverage)](https://sonarcloud.io/summary/new_code?id=vicmaeg_onvif-discovery)
 [![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=vicmaeg_onvif-discovery&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=vicmaeg_onvif-discovery)
 
-OnvifDiscovery is a simple cross-platform .NET library to discover ONVIF compliant devices.
+OnvifDiscovery is a small, cross-platform .NET library for discovering ONVIF-compliant devices with WS-Discovery. It probes every eligible IPv4 Ethernet and Wi-Fi interface and streams devices as they reply.
 
-## Getting started
+The package targets .NET 8 and .NET 10 and has no runtime package dependencies.
 
-OnvifDiscovery sends a probe message to all available network interfaces and waits the timeout specified in order to get the list of discovered onvif devices that replied to the probe message.
+## Installation
 
-To use the library install and add a reference of the OnvifDiscovery nuget package, then call the discover method like the following sample:
+```bash
+dotnet add package OnvifDiscovery
+```
 
-```cs
-// add the using
+## Discover devices
+
+`DiscoverAsync` returns an asynchronous stream. The timeout is measured in seconds; reaching it completes the stream normally.
+
+```csharp
 using OnvifDiscovery;
 
-// Create a Discovery instance
-var onvifDiscovery = new Discovery ();
+using var cancellation = new CancellationTokenSource();
+var discovery = new Discovery();
 
-// Call the asynchronous method DiscoverAsync that returns IAsyncEnumerable
-// with a timeout of 1 second
-await foreach (var device in discovery.DiscoverAsync(1, cancellationToken))
+await foreach (var device in discovery.DiscoverAsync(
+                   timeout: 5,
+                   cancellationToken: cancellation.Token))
 {
-    // New device discovered
+    Console.WriteLine($"{device.Mfr} {device.Model} at {device.Address}");
+
+    foreach (var serviceAddress in device.XAddresses)
+    {
+        Console.WriteLine($"  {serviceAddress}");
+    }
 }
 ```
 
-Finally, you can also use the DiscoverAsync method by passing a `ChannelWriter<DiscoveryDevice>`, the method will write to the channel devices as soon as they are discovered:
+Callers that already use channels can provide their own `ChannelWriter<DiscoveryDevice>`:
 
-```cs
-// add the using
+```csharp
+using System.Threading.Channels;
 using OnvifDiscovery;
+using OnvifDiscovery.Models;
 
-// Create a Discovery instance
-var onvifDiscovery = new Discovery ();
-
-// You can call Discover with a ChannelWriter and CancellationToken
-CancellationTokenSource cancellation = new CancellationTokenSource ();
+using var cancellation = new CancellationTokenSource();
+var discovery = new Discovery();
 var channel = Channel.CreateUnbounded<DiscoveryDevice>();
 
-var discoverTask = onvifDiscovery.DiscoverAsync(channel.Writer, 1, cancellationToken);
-await foreach (var device in channel.Reader.ReadAllAsync(cancellationToken))
+var discoveryTask = discovery.DiscoverAsync(
+    channel.Writer,
+    timeout: 5,
+    cancellationToken: cancellation.Token);
+
+await foreach (var device in channel.Reader.ReadAllAsync(cancellation.Token))
 {
-    // New device discovered
+    Console.WriteLine($"{device.Mfr} {device.Model} at {device.Address}");
 }
+
+await discoveryTask;
 ```
 
-## Obsolete methods from version 1.X
-When you update to version 2 you can see that previous available methods are marked as obsolete.
-Please use the new methods explained above as they have better support for asynchronous programming.
+External cancellation stops discovery with an `OperationCanceledException`. Discovery failures complete the supplied channel with the same exception and fault the returned task.
+
+## Discovery results
+
+Each `DiscoveryDevice` contains:
+
+- `Address`: IP address that sent the discovery response.
+- `XAddresses`: ONVIF service URLs advertised by the device.
+- `Types`: advertised ONVIF device types.
+- `Mfr` and `Model`: manufacturer and model parsed from the device scopes when present.
+- `Scopes`: the complete advertised scope list.
+
+Results seen on multiple network interfaces are de-duplicated by their advertised service addresses.
+
+## Network requirements
+
+WS-Discovery uses IPv4 multicast address `239.255.255.250` on UDP port `3702`. The host and devices must be on a network where multicast traffic is available, and the application must be allowed to send and receive UDP traffic. Only active Ethernet and Wi-Fi interfaces with IPv4 support are used.
+
+## Development
+
+Build the solution:
+
+```bash
+dotnet build OnvifDiscovery.sln --configuration Release
+```
+
+Run the xUnit v3 test executable:
+
+```bash
+dotnet run --project OnvifDiscovery.Tests/OnvifDiscovery.Tests.csproj --configuration Release
+```
+
+## License
+
+OnvifDiscovery is licensed under the [MIT License](LICENSE).
