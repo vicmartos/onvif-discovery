@@ -25,6 +25,39 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Check SonarQube Cloud configuration
+        id: sonar
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -n "$SONAR_TOKEN" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "SONAR_TOKEN is unavailable; skipping SonarQube Cloud analysis."
+          fi
+
+      - name: Install SonarQube Cloud tools
+        if: ${{ steps.sonar.outputs.enabled == 'true' }}
+        run: |
+          dotnet tool install --global dotnet-sonarscanner --version 11.3.0
+          dotnet tool install --global dotnet-coverage --version 18.11.2
+
+      - name: Begin SonarQube Cloud analysis
+        if: ${{ steps.sonar.outputs.enabled == 'true' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >-
+          dotnet sonarscanner begin
+          /k:"vicmartos_onvif-discovery"
+          /o:"vicmartos"
+          /d:sonar.token="$SONAR_TOKEN"
+          /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,OnvifDiscovery/Client/OnvifUdpClient.cs"
+          /d:sonar.cs.vscoveragexml.reportsPaths="$RUNNER_TEMP/coverage.xml"
+          /d:sonar.qualitygate.wait=true
+          /d:sonar.qualitygate.timeout=300
+
       - name: Restore
         run: dotnet restore OnvifDiscovery.sln --disable-build-servers -m:1
 
@@ -33,12 +66,28 @@ jobs:
           dotnet build OnvifDiscovery.sln
           --configuration Release
           --no-restore
+          --no-incremental
           --disable-build-servers
           -m:1
           -p:Version=0.0.0-ci
 
+      - name: Run tests with coverage
+        if: ${{ steps.sonar.outputs.enabled == 'true' }}
+        run: >-
+          dotnet-coverage collect
+          "dotnet OnvifDiscovery.Tests/bin/Release/net10.0/OnvifDiscovery.Tests.dll -noColor -noLogo"
+          -f xml
+          -o "$RUNNER_TEMP/coverage.xml"
+
       - name: Run tests
+        if: ${{ steps.sonar.outputs.enabled != 'true' }}
         run: dotnet OnvifDiscovery.Tests/bin/Release/net10.0/OnvifDiscovery.Tests.dll -noColor -noLogo
+
+      - name: Complete SonarQube Cloud analysis
+        if: ${{ steps.sonar.outputs.enabled == 'true' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 
       - name: Pack probe package
         run: >-
@@ -72,4 +121,4 @@ jobs:
           grep -Fq '<version>0.0.0-ci</version>' <<< "$nuspec"
           grep -Fq '<license type="expression">MIT</license>' <<< "$nuspec"
           grep -Fq '<readme>README.md</readme>' <<< "$nuspec"
-          grep -Fq '<repository type="git" url="https://github.com/vicmaeg/onvif-discovery"' <<< "$nuspec"
+          grep -Fq '<repository type="git" url="https://github.com/vicmartos/onvif-discovery"' <<< "$nuspec"
