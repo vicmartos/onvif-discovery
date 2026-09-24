@@ -17,9 +17,9 @@
     <Description>A simple cross-platform library to discover ONVIF compliant devices</Description>
     <IsPackable>true</IsPackable>
     <PackageTags>onvif;discover;camera</PackageTags>
-    <PackageProjectUrl>https://github.com/vicmaeg/onvif-discovery</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/vicmartos/onvif-discovery</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/vicmaeg/onvif-discovery</RepositoryUrl>
+    <RepositoryUrl>https://github.com/vicmartos/onvif-discovery</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

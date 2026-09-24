@@ -1,11 +1,10 @@
 # Onvif Discovery
 
 [![NuGet](https://img.shields.io/nuget/v/OnvifDiscovery.svg?style=flat-square)](https://www.nuget.org/packages/OnvifDiscovery/)
-[![GitHub CI](https://github.com/vicmaeg/onvif-discovery/actions/workflows/ci.yml/badge.svg)](https://github.com/vicmaeg/onvif-discovery/actions/workflows/ci.yml)
-[![Azure Pipelines](https://dev.azure.com/vmaeg/onvif-discovery/_apis/build/status/vicmaeg.onvif-discovery?branchName=master)](https://dev.azure.com/vmaeg/onvif-discovery/_build/latest?definitionId=3&branchName=master)
-[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=vicmaeg_onvif-discovery&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=vicmaeg_onvif-discovery)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=vicmaeg_onvif-discovery&metric=coverage)](https://sonarcloud.io/summary/new_code?id=vicmaeg_onvif-discovery)
-[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=vicmaeg_onvif-discovery&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=vicmaeg_onvif-discovery)
+[![GitHub CI](https://github.com/vicmartos/onvif-discovery/actions/workflows/ci.yml/badge.svg)](https://github.com/vicmartos/onvif-discovery/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=vicmartos_onvif-discovery&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=vicmartos_onvif-discovery)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=vicmartos_onvif-discovery&metric=coverage)](https://sonarcloud.io/summary/new_code?id=vicmartos_onvif-discovery)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=vicmartos_onvif-discovery&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=vicmartos_onvif-discovery)
 
 OnvifDiscovery is a small, cross-platform .NET library for discovering ONVIF-compliant devices with WS-Discovery. It probes every eligible IPv4 Ethernet and Wi-Fi interface and streams devices as they reply.
 

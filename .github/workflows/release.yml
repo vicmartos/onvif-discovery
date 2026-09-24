@@ -185,7 +185,7 @@ jobs:
           grep -Fq "<version>$VERSION</version>" <<< "$nuspec"
           grep -Fq '<license type="expression">MIT</license>' <<< "$nuspec"
           grep -Fq '<readme>README.md</readme>' <<< "$nuspec"
-          grep -Fq '<repository type="git" url="https://github.com/vicmaeg/onvif-discovery"' <<< "$nuspec"
+          grep -Fq '<repository type="git" url="https://github.com/vicmartos/onvif-discovery"' <<< "$nuspec"
 
       - name: Log in to NuGet with trusted publishing
         id: nuget-login
