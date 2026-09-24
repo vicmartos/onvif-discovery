@@ -16,12 +16,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
 
@@ -38,23 +38,39 @@ jobs:
             echo "SONAR_TOKEN is unavailable; skipping SonarQube Cloud analysis."
           fi
 
-      - name: Install SonarQube Cloud tools
+      - name: Cache SonarQube Cloud tools
         if: ${{ steps.sonar.outputs.enabled == 'true' }}
+        id: cache-sonar-tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/sonar-tools
+          key: ${{ runner.os }}-sonar-tools-11.3.0-coverage-18.11.2
+
+      - name: Install SonarQube Cloud tools
+        if: ${{ steps.sonar.outputs.enabled == 'true' && steps.cache-sonar-tools.outputs.cache-hit != 'true' }}
         run: |
-          dotnet tool install --global dotnet-sonarscanner --version 11.3.0
-          dotnet tool install --global dotnet-coverage --version 18.11.2
+          dotnet tool install dotnet-sonarscanner --tool-path "$RUNNER_TEMP/sonar-tools" --version 11.3.0
+          dotnet tool install dotnet-coverage --tool-path "$RUNNER_TEMP/sonar-tools" --version 18.11.2
+
+      - name: Cache SonarQube Cloud plugins
+        if: ${{ steps.sonar.outputs.enabled == 'true' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/sonar-cache
+          key: ${{ runner.os }}-sonar-plugins-v1
 
       - name: Begin SonarQube Cloud analysis
         if: ${{ steps.sonar.outputs.enabled == 'true' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: >-
-          dotnet sonarscanner begin
+          "$RUNNER_TEMP/sonar-tools/dotnet-sonarscanner" begin
           /k:"vicmartos_onvif-discovery"
           /o:"vicmartos"
           /d:sonar.token="$SONAR_TOKEN"
           /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,OnvifDiscovery/Client/OnvifUdpClient.cs"
           /d:sonar.cs.vscoveragexml.reportsPaths="$RUNNER_TEMP/coverage.xml"
+          /d:sonar.plugin.cache.directory="$RUNNER_TEMP/sonar-cache"
           /d:sonar.qualitygate.wait=true
           /d:sonar.qualitygate.timeout=300
 
@@ -74,7 +90,7 @@ jobs:
       - name: Run tests with coverage
         if: ${{ steps.sonar.outputs.enabled == 'true' }}
         run: >-
-          dotnet-coverage collect
+          "$RUNNER_TEMP/sonar-tools/dotnet-coverage" collect
           "dotnet OnvifDiscovery.Tests/bin/Release/net10.0/OnvifDiscovery.Tests.dll -noColor -noLogo"
           -f xml
           -o "$RUNNER_TEMP/coverage.xml"
@@ -87,7 +103,7 @@ jobs:
         if: ${{ steps.sonar.outputs.enabled == 'true' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+        run: '"$RUNNER_TEMP/sonar-tools/dotnet-sonarscanner" end /d:sonar.token="$SONAR_TOKEN"'
 
       - name: Pack probe package
         run: >-
