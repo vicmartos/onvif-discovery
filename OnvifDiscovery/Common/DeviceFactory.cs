@@ -85,8 +85,6 @@ internal static class DeviceFactory
             {
                 return false;
             }
-
-            index += 2;
         }
 
         return true;
