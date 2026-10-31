@@ -75,6 +75,10 @@ Each `DiscoveryDevice` contains:
 - `Mfr` and `Model`: manufacturer and model parsed from the device scopes when present.
 - `Scopes`: the complete advertised scope list.
 
+Scopes are separated by whitespace and parsed independently as URIs. Metadata uses exact `hardware`, `mfr`, `manufacturer`, and `name` path segments, including nested device-specific paths such as `/acc/mfr/...` and `/name/acc/...`. The final path component is decoded as the value, and the first value advertised for each metadata category is used. Malformed scopes are retained in `Scopes` and ignored for metadata parsing.
+
+For compatibility with v3, when no manufacturer scope is available, `Mfr` falls back to the first word of the decoded device name. This fallback may describe the device name rather than its actual manufacturer. Missing metadata is returned as an empty string; missing scopes produce an empty list.
+
 Results seen on multiple network interfaces are de-duplicated by their advertised service addresses.
 
 ## Network requirements
