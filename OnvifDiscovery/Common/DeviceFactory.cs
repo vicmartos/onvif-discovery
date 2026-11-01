@@ -10,8 +10,8 @@ internal static class DeviceFactory
         var scopes = probeMatch.Scopes.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         var (model, manufacturer) = ParseScopes(scopes);
         return new DiscoveryDevice(
-            ConvertToList(probeMatch.Types),
-            ConvertToList(probeMatch.XAddrs),
+            SplitAndTrim(probeMatch.Types),
+            SplitAndTrim(probeMatch.XAddrs),
             model,
             manufacturer,
             remoteEndpoint.Address.ToString(),
@@ -26,22 +26,7 @@ internal static class DeviceFactory
         string? name = null;
         foreach (var scope in scopes)
         {
-            if (!HasValidPercentEncoding(scope) || !Uri.TryCreate(scope, UriKind.Absolute, out var uri))
-            {
-                continue;
-            }
-
-            // Split before decoding so encoded slashes remain part of the value.
-            var segments = uri.AbsolutePath.Split('/');
-            if (segments.Length < 3 || string.IsNullOrEmpty(segments[^1]))
-            {
-                continue;
-            }
-
-            // Some devices nest metadata, e.g. /acc/mfr/value or /name/acc/value.
-            var category = segments.Take(segments.Length - 1).FirstOrDefault(segment =>
-                segment is "hardware" or "mfr" or "manufacturer" or "name");
-            var value = Uri.UnescapeDataString(segments[^1]);
+            var (category, value) = ParseScope(scope);
             switch (category)
             {
                 case "hardware":
@@ -57,19 +42,34 @@ internal static class DeviceFactory
             }
         }
 
-        // Preserve the v3 name-based fallback when no manufacturer was advertised.
+        // Use the first word of the device name when no manufacturer was advertised.
         manufacturer ??= name?.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
         return (model ?? string.Empty, manufacturer ?? string.Empty);
     }
 
-    private static IEnumerable<string> ConvertToList(string spacedListString)
+    private static (string? Category, string? Value) ParseScope(string scope)
     {
-        var strings = spacedListString.Split();
-        foreach (var str in strings)
+        if (!HasValidPercentEncoding(scope) || !Uri.TryCreate(scope, UriKind.Absolute, out var uri))
         {
-            yield return str.Trim();
+            return (null, null);
         }
+
+        // Split before decoding so encoded slashes remain part of the value.
+        var segments = uri.AbsolutePath.Split('/');
+        if (segments.Length < 3 || string.IsNullOrEmpty(segments[^1]))
+        {
+            return (null, null);
+        }
+
+        // Some devices nest metadata, e.g. /acc/mfr/value or /name/acc/value.
+        var category = segments.SkipLast(1).FirstOrDefault(segment =>
+            segment is "hardware" or "mfr" or "manufacturer" or "name");
+
+        return (category, Uri.UnescapeDataString(segments[^1]));
     }
+
+    private static IEnumerable<string> SplitAndTrim(string value) =>
+        value.Split().Select(part => part.Trim());
 
     private static bool HasValidPercentEncoding(string scope)
     {
