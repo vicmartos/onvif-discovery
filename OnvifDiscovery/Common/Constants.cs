@@ -6,7 +6,9 @@ namespace OnvifDiscovery.Common;
 
 internal static class Constants
 {
+#pragma warning disable S1313 // WS-Discovery specifies this fixed multicast address.
     public const string WS_MULTICAST_ADDRESS = "239.255.255.250";
+#pragma warning restore S1313
     public const int WS_MULTICAST_PORT = 3702;
 
     public const string WS_PROBE_MESSAGE =
@@ -25,7 +27,4 @@ internal static class Constants
         + "<d:Probe><d:Types>dn:NetworkVideoTransmitter</d:Types></d:Probe>"
         + "</e:Body>"
         + "</e:Envelope>";
-
-    public const string PATTERN =
-        @"^((onvif[s]?|ftp):\/)?\/?([^:\/\s]+)((\/\w+)*\/)([\w\-\.]+[^#?\s]+)(.*)?(#[\w\-]+)?$";
 }

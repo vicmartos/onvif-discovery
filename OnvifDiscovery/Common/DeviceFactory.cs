@@ -1,65 +1,92 @@
 ﻿using System.Net;
-using System.Text.RegularExpressions;
 using OnvifDiscovery.Models;
 
 namespace OnvifDiscovery.Common;
 
 internal static class DeviceFactory
 {
-    private const int RegexProcessingTimeoutInMs = 500;
-
-    internal static DiscoveryDevice CreateDevice(ProbeMatch probeMatch, IPEndPoint remoteEndpoint) =>
-        new(
-            ConvertToList(probeMatch.Types),
-            ConvertToList(probeMatch.XAddrs),
-            ParseModelFromScopes(probeMatch.Scopes),
-            ParseMfrFromScopes(probeMatch.Scopes),
+    internal static DiscoveryDevice CreateDevice(ProbeMatch probeMatch, IPEndPoint remoteEndpoint)
+    {
+        var scopes = probeMatch.Scopes.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var (model, manufacturer) = ParseScopes(scopes);
+        return new DiscoveryDevice(
+            SplitAndTrim(probeMatch.Types),
+            SplitAndTrim(probeMatch.XAddrs),
+            model,
+            manufacturer,
             remoteEndpoint.Address.ToString(),
-            ConvertToList(probeMatch.Scopes)
+            scopes
         );
-
-    private static string ParseModelFromScopes(string scopes)
-    {
-        var model = Regex.Match(scopes, "(?<=hardware/).*?(?= )", RegexOptions.None,
-            TimeSpan.FromMilliseconds(RegexProcessingTimeoutInMs)).Value;
-        return Uri.UnescapeDataString(model);
     }
 
-    private static string ParseMfrFromScopes(string scopes)
+    private static (string Model, string Manufacturer) ParseScopes(IEnumerable<string> scopes)
     {
-        var scopesArray = scopes.Split();
-        var nameQuery = scopesArray.Where(scope => scope.Contains("name/")).ToArray();
-        var mfrQuery = scopesArray.Where(scope => scope.Contains("mfr/") || scope.Contains("manufacturer/"))
-            .ToArray();
-        if (mfrQuery.Length > 0)
+        string? model = null;
+        string? manufacturer = null;
+        string? name = null;
+        foreach (var scope in scopes)
         {
-            var mfrMatch = Regex.Match(mfrQuery[0], Constants.PATTERN, RegexOptions.None,
-                TimeSpan.FromMilliseconds(RegexProcessingTimeoutInMs));
-            return Uri.UnescapeDataString(mfrMatch.Groups[6].Value);
+            var (category, value) = ParseScope(scope);
+            switch (category)
+            {
+                case "hardware":
+                    model ??= value;
+                    break;
+                case "mfr":
+                case "manufacturer":
+                    manufacturer ??= value;
+                    break;
+                case "name":
+                    name ??= value;
+                    break;
+            }
         }
 
-        if (nameQuery.Length <= 0)
-        {
-            return string.Empty;
-        }
-
-        var nameMatch = Regex.Match(nameQuery[0], Constants.PATTERN, RegexOptions.None,
-            TimeSpan.FromMilliseconds(RegexProcessingTimeoutInMs));
-        var mfr = Uri.UnescapeDataString(nameMatch.Groups[6].Value);
-        if (mfr.Contains(' '))
-        {
-            mfr = mfr.Split()[0];
-        }
-
-        return mfr;
+        // Use the first word of the device name when no manufacturer was advertised.
+        manufacturer ??= name?.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        return (model ?? string.Empty, manufacturer ?? string.Empty);
     }
 
-    private static IEnumerable<string> ConvertToList(string spacedListString)
+    private static (string? Category, string? Value) ParseScope(string scope)
     {
-        var strings = spacedListString.Split();
-        foreach (var str in strings)
+        if (!HasValidPercentEncoding(scope) || !Uri.TryCreate(scope, UriKind.Absolute, out var uri))
         {
-            yield return str.Trim();
+            return (null, null);
         }
+
+        // Split before decoding so encoded slashes remain part of the value.
+        var segments = uri.AbsolutePath.Split('/');
+        if (segments.Length < 3 || string.IsNullOrEmpty(segments[^1]))
+        {
+            return (null, null);
+        }
+
+        // Some devices nest metadata, e.g. /acc/mfr/value or /name/acc/value.
+        var category = segments.SkipLast(1).FirstOrDefault(segment =>
+            segment is "hardware" or "mfr" or "manufacturer" or "name");
+
+        return (category, Uri.UnescapeDataString(segments[^1]));
+    }
+
+    private static IEnumerable<string> SplitAndTrim(string value) =>
+        value.Split().Select(part => part.Trim());
+
+    private static bool HasValidPercentEncoding(string scope)
+    {
+        // IsWellFormedOriginalString rejects some encoded Unicode names in real device scopes.
+        for (var index = 0; index < scope.Length; index++)
+        {
+            if (scope[index] != '%')
+            {
+                continue;
+            }
+
+            if (index + 2 >= scope.Length || !Uri.IsHexDigit(scope[index + 1]) || !Uri.IsHexDigit(scope[index + 2]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
